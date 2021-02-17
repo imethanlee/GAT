@@ -1,4 +1,5 @@
 from data.cora import *
+from model.gat import *
 
 
 def val():

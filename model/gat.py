@@ -6,7 +6,7 @@ from torchsummary import summary
 
 
 class GraphAttentionLayer(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, alpha: float):
+    def __init__(self, in_channels: int, out_channels: int, alpha: float = 0.2):
         super(GraphAttentionLayer, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -14,12 +14,13 @@ class GraphAttentionLayer(nn.Module):
         self.w = nn.Parameter(torch.FloatTensor(in_channels, out_channels))
         self.a = nn.Parameter(torch.FloatTensor(2 * out_channels, 1))
         self.leakyrelu = nn.LeakyReLU(self.alpha)
+        self.init_params()
 
     def init_params(self):
         init.kaiming_uniform_(self.w)
         init.kaiming_uniform_(self.a)
 
-    def forward(self):
+    def forward(self, x):
         pass
 
 
