@@ -3,6 +3,13 @@
   <component name="CsvFileAttributes">
     <option name="attributeMap">
       <map>
+        <entry key="C:\Users\ASUS\AppData\Local\JetBrains\PyCharm2020.3\python_stubs\-1998007000\torch\_C\_TensorBase.py">
+          <value>
+            <Attribute>
+              <option name="separator" value=":" />
+            </Attribute>
+          </value>
+        </entry>
         <entry key="\data\cora.py">
           <value>
             <Attribute>

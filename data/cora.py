@@ -1,38 +1,74 @@
 import numpy as np
-import pandas
+import pandas as pd
 import scipy.sparse as sp
 import torch
-from torch.utils.data import TensorDataset
 
 
 class CoraDataset:
-    def __init__(self):
-        self.x = pandas.read_pickle("./data/trans.cora.x").toarray()
-        self.y = pandas.read_pickle("./data/trans.cora.y")
-        self.tx = pandas.read_pickle("./data/trans.cora.tx").toarray()
-        self.ty = pandas.read_pickle("./data/trans.cora.ty")
-        self.__graph = pandas.read_pickle("./data/trans.cora.graph")
-        self.num_nodes = len(self.__graph.keys())
-        self.ds_adj_mat = np.zeros((self.num_nodes, self.num_nodes))
-        self.preprocessing()
+    @staticmethod
+    def encode_onehot(labels):
+        # The classes must be sorted before encoding to enable static class encoding.
+        # In other words, make sure the first class always maps to index 0.
+        classes = sorted(list(set(labels)))
+        classes_dict = {c: np.identity(len(classes))[i, :] for i, c in enumerate(classes)}
+        labels_onehot = np.array(list(map(classes_dict.get, labels)), dtype=np.int32)
+        return labels_onehot
 
-    def preprocessing(self):
-        for src in self.__graph.keys():
-            items = self.__graph[src]
-            for dst in items:
-                self.ds_adj_mat[src, dst] = 1
+    @staticmethod
+    def load_data(path="./data/", dataset="cora"):
+        """Load citation network dataset (cora only for now)"""
+        print('Loading {} dataset...'.format(dataset))
 
-    @property
-    def sp_adj_mat(self):
-        r, c, v = [], [], []
-        for i in range(len(self.ds_adj_mat)):
-            for j in range(len(self.ds_adj_mat)):
-                if self.ds_adj_mat[i, j] != 0:
-                    r.append(i)
-                    c.append(j)
-                    v.append(float(self.ds_adj_mat[i, j]))
-        index = torch.LongTensor([r, c])
-        value = torch.FloatTensor(v)
-        sp_adj_mat = torch.sparse.FloatTensor(index, value, [self.num_nodes, self.num_nodes])
-        return sp_adj_mat
+        idx_features_labels = np.genfromtxt("{}{}.content".format(path, dataset), dtype=np.dtype(str))
+        features = sp.csr_matrix(idx_features_labels[:, 1:-1], dtype=np.float32)
+        labels = CoraDataset.encode_onehot(idx_features_labels[:, -1])
+
+        # build graph
+        idx = np.array(idx_features_labels[:, 0], dtype=np.int32)
+        idx_map = {j: i for i, j in enumerate(idx)}
+        edges_unordered = np.genfromtxt("{}{}.cites".format(path, dataset), dtype=np.int32)
+        edges = np.array(list(map(idx_map.get, edges_unordered.flatten())), dtype=np.int32).reshape(
+            edges_unordered.shape)
+        adj = sp.coo_matrix((np.ones(edges.shape[0]), (edges[:, 0], edges[:, 1])),
+                            shape=(labels.shape[0], labels.shape[0]), dtype=np.float32)
+
+        # build symmetric adjacency matrix
+        adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
+
+        features = CoraDataset.normalize_features(features)
+        adj = CoraDataset.normalize_adj(adj + sp.eye(adj.shape[0]))
+
+        idx_train = range(140)
+        idx_val = range(200, 500)
+        idx_test = range(500, 1500)
+
+        adj = torch.FloatTensor(np.array(adj.todense()))
+        features = torch.FloatTensor(np.array(features.todense()))
+        labels = torch.LongTensor(np.where(labels)[1])
+
+        idx_train = torch.LongTensor(idx_train)
+        idx_val = torch.LongTensor(idx_val)
+        idx_test = torch.LongTensor(idx_test)
+
+        return adj, features, labels, idx_train, idx_val, idx_test
+
+    @staticmethod
+    def normalize_adj(mx):
+        """Row-normalize sparse matrix"""
+        rowsum = np.array(mx.sum(1))
+        r_inv_sqrt = np.power(rowsum, -0.5).flatten()
+        r_inv_sqrt[np.isinf(r_inv_sqrt)] = 0.
+        r_mat_inv_sqrt = sp.diags(r_inv_sqrt)
+        return mx.dot(r_mat_inv_sqrt).transpose().dot(r_mat_inv_sqrt)
+
+    @staticmethod
+    def normalize_features(mx):
+        """Row-normalize sparse matrix"""
+        rowsum = np.array(mx.sum(1))
+        r_inv = np.power(rowsum, -1).flatten()
+        r_inv[np.isinf(r_inv)] = 0.
+        r_mat_inv = sp.diags(r_inv)
+        mx = r_mat_inv.dot(mx)
+        return mx
+
 
