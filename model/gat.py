@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.init as init
-import torch.nn.functional as F
 from torchsummary import summary
 
 
@@ -21,17 +20,17 @@ class GraphAttentionLayer(nn.Module):
         self.init_params()
 
     def init_params(self):
-        init.kaiming_uniform_(self.w)
-        init.kaiming_uniform_(self.a)
+        init.xavier_normal_(self.w)
+        init.xavier_normal_(self.a)
 
     def forward(self, x: torch.Tensor, adj_mat: torch.Tensor):
         wh = torch.matmul(x, self.w)
         num_nodes = wh.shape[0]
-        a_input = torch.cat([wh.repeat(1, num_nodes).view(num_nodes ** 2, -1),
+        a_input = torch.cat([wh.repeat_interleave(num_nodes, dim=0),
                              wh.repeat(num_nodes, 1)], dim=1)\
-            .view(num_nodes, -1, 2 * self.out_channels)
+            .view(num_nodes, num_nodes, 2 * self.out_channels)
         e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))
-        zero = -9e15 * torch.zeros_like(e)
+        zero = -9e15 * torch.ones_like(e)
         attn = torch.where(adj_mat > 0, e, zero)
         attn = self.softmax(attn)
         attn = self.dropout(attn)

@@ -4,7 +4,7 @@ import argparse
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--epochs', type=int, default=100, help='Number of epochs to train.')
+parser.add_argument('--epochs', type=int, default=10000, help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.005, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay (L2 loss on parameters).')
 parser.add_argument('--n_hid', type=int, default=8, help='Number of hidden units.')
@@ -27,6 +27,32 @@ criterion = nn.NLLLoss().to(device)
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
 
+class EarlyStop:
+    def __init__(self, patience: int, minimization: bool = True):
+        self.cnt = 0
+        self.patience = patience
+        self.minimization = minimization
+        if minimization:
+            self.best_val = np.inf
+        else:
+            self.best_val = -np.inf
+
+    def __is_better_than(self, input1, input2):
+        if self.minimization:
+            return input1 < input2
+        else:
+            return input1 > input2
+
+    def check(self, val):
+        if self.__is_better_than(val, self.best_val):
+            self.best_val = val
+            self.cnt = 0
+        self.cnt += 1
+        if self.cnt > self.patience:
+            return True
+        return False
+
+
 def test(idx):
     model.eval()
     with torch.no_grad():
@@ -38,29 +64,34 @@ def test(idx):
 
 
 def train():
+    earlystop = EarlyStop(args.patience, False)
     loss_history = []
     val_acc_history = []
     for epoch in range(1, args.epochs + 1):
         model.train()
-        logits = model(features, adj)  # 前向传播
-        train_mask_logits = logits[idx_train]  # 只选择训练节点进行监督
-        loss = criterion(train_mask_logits, labels[idx_train])  # 计算损失值
+        y_pred = model(features, adj)[idx_train]
+        loss = criterion(y_pred, labels[idx_train])
+
         optimizer.zero_grad()
-        loss.backward()  # 反向传播计算参数的梯度
-        optimizer.step()  # 使用优化方法进行梯度更新
-        train_acc, _, _ = test(idx_train)  # 计算当前模型在训练集上的准确率
-        val_acc, _, _ = test(idx_val)  # 计算当前模型在验证集上的准确率
-        # 记录训练过程中损失值和准确率的变化，用于画图
+        loss.backward()
+        optimizer.step()
+
+        train_acc, _, _ = test(idx_train)
+        val_acc, _, _ = test(idx_val)
+
+        if earlystop.check(val_acc):
+            break
+
         loss_history.append(loss.item())
         val_acc_history.append(val_acc.item())
         print("Epoch {:03d}: Loss {:.4f}, TrainAcc {:.4}, ValAcc {:.4f}".format(
             epoch, loss.item(), train_acc.item(), val_acc.item()))
+        print(earlystop.cnt)
     return loss_history, val_acc_history
 
 
 train()
 print(test(idx_test)[0])
-
 
 
 
