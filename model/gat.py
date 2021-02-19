@@ -2,20 +2,21 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.init as init
+import torch.nn.functional as F
 from torchsummary import summary
-import numpy as np
 
 
 class GraphAttentionLayer(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, alpha: float = 0.2):
+    def __init__(self, in_channels: int, out_channels: int, alpha: float, dropout: float):
         super(GraphAttentionLayer, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.alpha = alpha
-        self.w = nn.Parameter(torch.FloatTensor(in_channels, out_channels))
-        self.a = nn.Parameter(torch.FloatTensor(2 * out_channels, 1))
+        self.w = nn.Parameter(torch.FloatTensor(self.in_channels, self.out_channels))
+        self.a = nn.Parameter(torch.FloatTensor(2 * self.out_channels, 1))
         self.leakyrelu = nn.LeakyReLU(self.alpha)
         self.softmax = nn.Softmax(dim=1)
+        self.dropout = nn.Dropout(dropout)
         self.elu = nn.ELU()
         self.init_params()
 
@@ -30,23 +31,36 @@ class GraphAttentionLayer(nn.Module):
                              wh.repeat(num_nodes, 1)], dim=1)\
             .view(num_nodes, -1, 2 * self.out_channels)
         e = self.leakyrelu(torch.matmul(a_input, self.a).squeeze(2))
-        zero = 1e-12 * torch.zeros_like(e)
+        zero = -9e15 * torch.zeros_like(e)
         attn = torch.where(adj_mat > 0, e, zero)
         attn = self.softmax(attn)
+        attn = self.dropout(attn)
         h_prime = torch.matmul(attn, wh)
         out = self.elu(h_prime)
         return out
 
 
 class GAT(nn.Module):
-    def __init__(self, in_channels: int, mid_channels: int, out_channels: int = 7):
+    def __init__(self,
+                 n_features: int = 1433,
+                 n_hid: int = 8,
+                 n_heads: int = 8,
+                 n_class: int = 7,
+                 dropout: float = 0.6,
+                 alpha: float = 0.2):
         super(GAT, self).__init__()
-        self.gat1 = GraphAttentionLayer(in_channels, mid_channels)
-        self.gat2 = GraphAttentionLayer(mid_channels, out_channels)
-        self.softmax = nn.Softmax(dim=1)
+        # 1st-layer multi-head attention
+        self.gat1 = nn.ModuleList([GraphAttentionLayer(n_features, n_hid, alpha, dropout) for _ in range(n_heads)])
+        self.elu = nn.ELU()
+        # 2nd-layer single-head attention
+        self.gat2 = GraphAttentionLayer(n_heads * n_hid, n_class, alpha, dropout)
+        self.log_softmax = nn.LogSoftmax(dim=1)
+        self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x):
-        out1 = self.gat1(x)
-        out2 = self.gat2(out1)
-        out3 = self.softmax(out2)
-        return out3
+    def forward(self, x, adj):
+        x_do1 = self.dropout(x)
+        out1 = torch.cat([attn(x_do1, adj) for attn in self.gat1], dim=1)
+        x_do2 = self.dropout(out1)
+        out2 = self.gat2(x_do2, adj)
+        out = self.log_softmax(out2)
+        return out
