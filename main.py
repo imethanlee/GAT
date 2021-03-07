@@ -1,7 +1,7 @@
 from data.cora import *
 from model.gat import *
 import argparse
-#
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--epochs', type=int, default=10000, help='Number of epochs to train.')
