@@ -3,7 +3,7 @@ from model.gat import *
 import argparse
 
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser()#
 parser.add_argument('--epochs', type=int, default=10000, help='Number of epochs to train.')
 parser.add_argument('--lr', type=float, default=0.005, help='Initial learning rate.')
 parser.add_argument('--weight_decay', type=float, default=5e-4, help='Weight decay (L2 loss on parameters).')
